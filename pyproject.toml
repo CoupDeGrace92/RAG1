@@ -6,4 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "nltk==3.9.1",
+    "timing-logs",
 ]
+
+[tool.uv.sources]
+timing-logs = { path = "../../timing_logs", editable = true }
