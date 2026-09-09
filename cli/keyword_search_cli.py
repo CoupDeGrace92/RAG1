@@ -47,6 +47,10 @@ def main() -> None:
     bm25tf_parser.add_argument("--k1", type=float, default=BM25_k1, help="Tunable BM25 k1 parameter")
     bm25tf_parser.add_argument("--b", type=float, default=BM25_B, help="Tunable BM25 b parameter for length normalization")
 
+    bm25search_parser = subparsers.add_parser("bm25search", help="Search movies using full BM25 scoring")
+    bm25search_parser.add_argument("query", type=str, help="Search Query")
+    bm25search_parser.add_argument("--limit", type=int, default=5, help="Maximum number of results to returns")
+
 
     args = parser.parse_args()
 
@@ -151,6 +155,22 @@ def main() -> None:
             except Exception as e:
                 print(f"Error calculating BM25 TF score: {type(e).__name__} - {e}")
 
+        case "bm25search":
+            i_idx = InvertedIndex()
+            try:
+                i_idx.load()
+            except Exception as e:
+                print(f"Error loading data to search from: {e}")
+
+            try:
+                result_tuples = i_idx.bm25_search(args.query, args.limit)
+                i=1
+                for tuple in result_tuples:
+                    doc = tuple[0]
+                    print(f"{i}. ({doc.id}) {doc.title} - Score: {tuple[1]:.2f}")
+                    i+=1
+            except Exception as e:
+                print(f"Error in getting search results: {type(e).__name__} - {e}")
 
         case _:
             parser.print_help()
@@ -163,9 +183,10 @@ def main() -> None:
 #Helper function to remove punctuation/stopwords/create individual search params
 #create punc table once globally to prevent having to construct it each call
 def tokenize_params(raw: str) -> list:
-    raw = remove_stopwords(raw)
+    raw = raw.lower()
     raw = remove_punc(raw)
-    result = raw.lower().split()
+    raw = remove_stopwords(raw)
+    result = raw.split()
     result = stem_words(result)
     return result
 
@@ -182,10 +203,14 @@ def remove_punc(to_clean: str) -> str:
 stopwords = set()
 try:
     with open("data/stopwords.txt", "r") as file:
-        stopwords = set(file.read().splitlines())
+        text = file.read()
+        text = text.lower()
+        text = remove_punc(text)
+        stopwords = set(text.splitlines())
 except Exception as e:
     print(f"Unexpected error occured: {type(e).__name__} - {e}")
     print("Using no filter to clean stopwords - search results will be impacted.")
+
 def remove_stopwords(raw: str) -> str:
     raw_list = raw.split()
     cleaned = " ".join([word for word in raw_list if word not in stopwords])
@@ -304,7 +329,11 @@ class InvertedIndex:
         else:
             results = sorted(list(doc_ids))
         return results 
-    
+
+    def bm25(self, doc_id, term) -> float:
+        tf = self.get_bm25_tf(doc_id, term)
+        idf = self.get_bm25_idf(term)
+        return tf * idf
 
     def search(self, params: list[str], limit: int):
         results = []
@@ -319,6 +348,26 @@ class InvertedIndex:
 
                 if len(results) >= limit:
                     return results
+
+    def bm25_search(self, query: str, limit: int):
+        tokens = tokenize_params(query)
+        scores = {}
+        for doc in self.docmap:
+            BM25 = 0
+            for token in tokens:
+                BM25 += self.bm25(doc, token)
+            scores[doc] = BM25
+        s = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+
+        out = []
+        i=0
+        for score in s:
+            out.append((self.docmap[score[0]], score[1]))
+            i += 1
+            if i >= limit:
+                break
+        return out
+
 
     def build(self, fp: str):
         #The movie should be in the JSON format with fields:
