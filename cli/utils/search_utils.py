@@ -1,4 +1,4 @@
-import string, pickle, math, json, re
+import string, pickle, math, json, re, os
 from nltk.stem import PorterStemmer
 from typing import Self, Counter, Any, TypedDict
 from pathlib import Path
@@ -308,6 +308,12 @@ class InvertedIndex:
         if doc_l:
             self.doc_lengths = doc_l
 
+    def load_or_build(self) -> None:
+        if os.path.exists("./cache/index.pkl"):
+            self.load()
+        else:
+            self.build("./cache/index.pkl")
+            self.save()
 
 def build_command(fp: str) -> InvertedIndex:
     idx = InvertedIndex()
