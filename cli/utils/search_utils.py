@@ -1,12 +1,12 @@
-import string, pickle, math, json
+import string, pickle, math, json, re
 from nltk.stem import PorterStemmer
-from typing import Self, Counter
+from typing import Self, Counter, Any, TypedDict
 from pathlib import Path
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from collections import Counter
-from constants import BM25_k1, BM25_B
+from constants import BM25_k1, BM25_B, SCORE_PRECISION
 
 from timing_logs.data_structures import event_log, timed
 
@@ -314,3 +314,96 @@ def build_command(fp: str) -> InvertedIndex:
     idx.build(fp)
     idx.save()
     return idx
+
+
+def chunk_print(text: str, chunk_size: int, overlap: int):
+    text_list = text.split()
+    i=0
+    chunks=[]
+    while i<len(text_list):
+        if i != 0:
+            i = i-overlap
+        next_chunk = text_list[i:i+chunk_size]
+        chunks.append(next_chunk)
+        i+=chunk_size
+
+    print(f"Chunking {len(text)} characters")
+    j=1
+    for chunk in chunks:
+        print(f"{j}. {" ".join(chunk)}")
+        j+=1
+
+def semantic_chunk_print(text: str, chunk_size: int, overlap: int):
+    clean_text = text.strip()
+    if clean_text == "":
+        return []
+    sentances = re.split(r"(?<=[.!?])\s+", text)
+    if (len(sentances) == 1) and sentances[0].endswith(string.punctuation):
+        return sentances
+    for idx, sentance in enumerate(sentances):
+        sentances[idx] = sentance.strip()
+    i=0
+    chunks=[]
+    while i<len(sentances):
+        if i != 0:
+            i = i-overlap
+        next_chunk = sentances[i:i+chunk_size]
+        print(next_chunk)
+        if next_chunk == "":
+            continue
+        chunks.append(next_chunk)
+        i+=chunk_size
+
+    print(f"Semantically chunking {len(text)} characters")
+    j=1
+    for chunk in chunks:
+        print(f"{j}. {" ".join(chunk)}")
+        j+=1
+'''
+WE COULD COMBINE THE ABOVE
+def full_chunk_print(text: str, chunk_size: int, overlap: int, split_func):
+    chunk_list = split_func(text)
+
+e.g. for splitting on white spaces, we could give the lambda function
+full_chunk_print(text, 0, 0, split_fun=lambda t: t.split())
+'''
+
+
+def semantic_chunk(text: str, chunk_size: int, overlap: int):
+    clean_text = text.strip()
+    if clean_text == "":
+        return []
+    sentances = re.split(r"(?<=[.!?])\s+", clean_text)
+    if (len(sentances) == 1) and sentances[0].endswith(string.punctuation):
+        return sentances
+    i=0
+    chunks=[]
+    while i<len(sentances):
+        if i != 0:
+            i = i-overlap
+        next_chunk = sentances[i:i+chunk_size]
+        if next_chunk == "":
+            continue
+        chunks.append(next_chunk)
+        i+=chunk_size
+
+    return chunks
+
+
+class SearchResult(TypedDict):
+    id: int
+    title: str
+    document: str
+    score: float
+    metadata: dict[str, Any]
+
+def format_search_result(
+        doc_id: int, title: str, document: str, score: float, **metadata: Any
+) -> SearchResult:
+    return {
+        "id": doc_id,
+        "title": title,
+        "document": document,
+        "score": round(score, SCORE_PRECISION),
+        "metadata": metadata
+    }
