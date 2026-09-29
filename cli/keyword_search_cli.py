@@ -156,12 +156,11 @@ def main() -> None:
                 print(f"Error loading data to search from: {e}")
 
             try:
-                result_tuples = i_idx.bm25_search(args.query, args.limit)
-                i=1
-                for tuple in result_tuples:
-                    doc = tuple[0]
-                    print(f"{i}. ({doc.id}) {doc.title} - Score: {tuple[1]:.2f}")
-                    i+=1
+                results = i_idx.bm25_search(args.query, args.limit)
+                i = 1
+                for result in results:
+                    print(f"{i}. ({result['id']}) {result['title']} - Score: {result['score']:.2f}")
+                    i += 1
             except Exception as e:
                 print(f"Error in getting search results: {type(e).__name__} - {e}")
 

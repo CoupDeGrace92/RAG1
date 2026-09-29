@@ -10,6 +10,13 @@ from constants import BM25_k1, BM25_B, SCORE_PRECISION
 
 from timing_logs.data_structures import event_log, timed
 
+class SearchResult(TypedDict):
+    id: int
+    title: str
+    document: str
+    score: float
+    metadata: dict[str, Any]
+
 #Helper function to remove punctuation/stopwords/create individual search params
 #create punc table once globally to prevent having to construct it each call
 def tokenize_params(raw: str) -> list:
@@ -139,7 +146,7 @@ class InvertedIndex:
     def get_bm25_idf(self: Self, term: str) -> float:
         tokenized_term = tokenize_single(term)
         doc_count = len(self.docmap)
-        match_count = len(self.index[tokenized_term])
+        match_count = len(self.index.get(tokenized_term, []))
         return math.log((doc_count - match_count + 0.5) / (match_count + 0.5) + 1)
 
     def get_bm25_tf(self, doc_id: int, term: str, k1: float=BM25_k1, b: float=BM25_B) -> float:
@@ -179,7 +186,7 @@ class InvertedIndex:
                 if len(results) >= limit:
                     return results
 
-    def bm25_search(self, query: str, limit: int):
+    def bm25_search(self, query: str, limit: int) ->list[SearchResult]:
         tokens = tokenize_params(query)
         scores = {}
         for doc in self.docmap:
@@ -190,9 +197,16 @@ class InvertedIndex:
         s = sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
         out = []
-        i=0
+        i = 0
         for score in s:
-            out.append((self.docmap[score[0]], score[1]))
+            doc = self.docmap[score[0]]
+            result = {
+                "id": doc.id,
+                "title": doc.title,
+                "document": doc.description,
+                "score": score[1]
+            }
+            out.append(result)
             i += 1
             if i >= limit:
                 break
@@ -379,15 +393,17 @@ def semantic_chunk(text: str, chunk_size: int, overlap: int):
     clean_text = text.strip()
     if clean_text == "":
         return []
-    sentances = re.split(r"(?<=[.!?])\s+", clean_text)
+    sentances = re.split(r"(?<=[.!?])\s+", text)
     if (len(sentances) == 1) and sentances[0].endswith(string.punctuation):
         return sentances
+    for idx, sentance in enumerate(sentances):
+        sentances[idx] = sentance.strip()
     i=0
     chunks=[]
     while i<len(sentances):
         if i != 0:
             i = i-overlap
-        next_chunk = sentances[i:i+chunk_size]
+        next_chunk = " ".join(sentances[i:i+chunk_size])
         if next_chunk == "":
             continue
         chunks.append(next_chunk)
@@ -396,12 +412,7 @@ def semantic_chunk(text: str, chunk_size: int, overlap: int):
     return chunks
 
 
-class SearchResult(TypedDict):
-    id: int
-    title: str
-    document: str
-    score: float
-    metadata: dict[str, Any]
+
 
 def format_search_result(
         doc_id: int, title: str, document: str, score: float, **metadata: Any
@@ -413,3 +424,30 @@ def format_search_result(
         "score": round(score, SCORE_PRECISION),
         "metadata": metadata
     }
+
+def max_min_normalize(l: list[float]) -> list[float]:
+    if len(l) == 0:
+        return []
+    mx = max(l)
+    mn = min(l)
+    if mx == mn:
+        return [1.0] * len(l)
+    out = []
+    for item in l:
+        out.append((item-mn)/(mx-mn))
+    return out
+
+def normalize_score_dicts(l: list[SearchResult]) -> list[SearchResult]:
+    #This function is for combining some search metrics
+    #IT ASSUMES THE LIST IS SORTED IN DESCENDING ORDER OF SCORES
+    mx = l[0].get("score")
+    mn = l[len(l)-1].get("score")
+    for idx, item in enumerate(l):
+        s = item.get("score")
+        l[idx]["score"] = (s-mn)/(mx-mn)
+    return l
+
+def rrf(rank: int, k: int) -> float:
+    if rank==0:
+        return 0
+    return (1/(k + rank))
